@@ -4,19 +4,14 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>SNS Quick Launcher</title>
-  <!-- Tailwind CSS CDN -->
   <script src="https://cdn.tailwindcss.com"></script>
   <style>
-    :root {
-      /* Android でアプリが無い場合に Web へフォールバックするまでの待機時間 (ms) */
-      --android-fallback-delay: 1500;
-    }
+    :root { --android-fallback-delay: 1500; }
   </style>
 </head>
 <body class="bg-gray-100 text-gray-800 min-h-screen flex flex-col items-center py-10">
   <h1 class="text-2xl font-bold mb-8">SNS クイックランチャー</h1>
 
-  <!-- ===== ボタン用テンプレート ===== -->
   <template id="btn-template">
     <button class="flex items-center gap-4 w-full max-w-md px-4 py-3 mb-4 rounded-2xl shadow hover:shadow-lg active:scale-[0.98] transition bg-white text-left">
       <img class="w-10 h-10 object-contain" />
@@ -27,43 +22,22 @@
   <div id="buttons" class="w-full max-w-md"></div>
 
   <script>
-    /**
-     * ディープリンク → アプリ起動失敗時に Web へフォールバック
-     * 1. hidden iframe or location.href で custom scheme / intent を呼ぶ
-     * 2. setTimeout で https へ遷移 (アプリが起動すれば JS 実行中断)
-     */
     function openWithSmartFallback(deepLink, webUrl) {
       const ua = navigator.userAgent.toLowerCase();
       const isAndroid = ua.includes('android');
       const isIOS = /iphone|ipad|ipod/.test(ua);
 
       if (isAndroid) {
-        // --- Android: フォールバックあり ---
         const targetUrl = deepLink.intent || deepLink.scheme || webUrl;
         const delay = parseInt(getComputedStyle(document.documentElement).getPropertyValue('--android-fallback-delay'));
-
-        const timer = setTimeout(() => {
-          window.location.href = webUrl;
-        }, delay);
-
-        // アプリが前面に来たらキャンセル
-        document.addEventListener(
-          'visibilitychange',
-          () => {
-            if (document.visibilityState === 'hidden') {
-              clearTimeout(timer);
-            }
-          },
-          { once: true }
-        );
-
+        const timer = setTimeout(() => window.location.href = webUrl, delay);
+        document.addEventListener('visibilitychange', () => {
+          if (document.visibilityState === 'hidden') clearTimeout(timer);
+        }, { once: true });
         window.location.href = targetUrl;
       } else if (isIOS) {
-        // --- iOS: フォールバックなし → ユーザがキャンセルしても画面遷移しない ---
-        const targetUrl = deepLink.scheme || webUrl;
-        window.location.href = targetUrl;
+        window.location.href = deepLink.scheme || webUrl;
       } else {
-        // その他 (デスクトップなど) は単に Web
         window.open(webUrl, '_blank');
       }
     }
@@ -75,8 +49,8 @@
         label: 'TikTok (コミット銀座)',
         icon: 'https://images.icon-icons.com/3041/PNG/512/tiktok_logo_icon_189233.png',
         deep: {
-          scheme: 'tiktok://user/@commit_ginza',
-          intent: 'intent://www.tiktok.com/@commit_ginza#Intent;package=com.zhiliaoapp.musically;scheme=https;end'
+          scheme: 'tiktok://user/profile/7068576154015538181',
+          intent: 'intent://user/profile/7068576154015538181#Intent;scheme=tiktok;package=com.zhiliaoapp.musically;end'
         },
         web: 'https://www.tiktok.com/@commit_ginza'
       },
@@ -118,7 +92,8 @@
         label: 'TikTok (大津祐樹)',
         icon: 'https://images.icon-icons.com/3041/PNG/512/tiktok_logo_icon_189233.png',
         deep: {
-          scheme: 'tiktok://user/@o2yuki0324'
+          scheme: 'tiktok://user/profile/6957036680367011846',
+          intent: 'intent://user/profile/6957036680367011846#Intent;scheme=tiktok;package=com.zhiliaoapp.musically;end'
         },
         web: 'https://www.tiktok.com/@o2yuki0324'
       },
@@ -166,14 +141,10 @@
 
     links.forEach(({ label, icon, deep, web }) => {
       const clone = tpl.cloneNode(true);
-      const btn = clone.querySelector('button');
-      const img = clone.querySelector('img');
-      const span = clone.querySelector('span');
-
-      img.src = icon;
-      img.alt = label;
-      span.textContent = label;
-      btn.addEventListener('click', () => openWithSmartFallback(deep, web));
+      clone.querySelector('img').src = icon;
+      clone.querySelector('img').alt = label;
+      clone.querySelector('span').textContent = label;
+      clone.querySelector('button').addEventListener('click', () => openWithSmartFallback(deep, web));
       container.appendChild(clone);
     });
   </script>
