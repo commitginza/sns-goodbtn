@@ -8,8 +8,8 @@
   <script src="https://cdn.tailwindcss.com"></script>
   <style>
     :root {
-      /* アプリが起動しなかった場合に Web にフォールバックするまでの待機時間 (ms) */
-      --fallback-delay: 1500;
+      /* Android でアプリが無い場合に Web へフォールバックするまでの待機時間 (ms) */
+      --android-fallback-delay: 1500;
     }
   </style>
 </head>
@@ -32,33 +32,40 @@
      * 1. hidden iframe or location.href で custom scheme / intent を呼ぶ
      * 2. setTimeout で https へ遷移 (アプリが起動すれば JS 実行中断)
      */
-    function openWithFallback(deepLink, webUrl) {
-      const delay = parseInt(getComputedStyle(document.documentElement).getPropertyValue('--fallback-delay'));
-
+    function openWithSmartFallback(deepLink, webUrl) {
       const ua = navigator.userAgent.toLowerCase();
-      const isAndroid = ua.indexOf('android') > -1;
+      const isAndroid = ua.includes('android');
       const isIOS = /iphone|ipad|ipod/.test(ua);
 
-      // Android は intent 優先 → scheme → web
-      // iOS は scheme 優先 (Safari) → web
-      const targetUrl = isAndroid
-        ? deepLink.intent || deepLink.scheme || webUrl
-        : deepLink.scheme || webUrl;
+      if (isAndroid) {
+        // --- Android: フォールバックあり ---
+        const targetUrl = deepLink.intent || deepLink.scheme || webUrl;
+        const delay = parseInt(getComputedStyle(document.documentElement).getPropertyValue('--android-fallback-delay'));
 
-      // フォールバック用タイマー
-      const timer = setTimeout(() => {
-        window.location.href = webUrl;
-      }, delay);
+        const timer = setTimeout(() => {
+          window.location.href = webUrl;
+        }, delay);
 
-      // 背景に遷移したら (= アプリ起動成功) タイマーを解除
-      document.addEventListener('visibilitychange', () => {
-        if (document.visibilityState === 'hidden') {
-          clearTimeout(timer);
-        }
-      }, { once: true });
+        // アプリが前面に来たらキャンセル
+        document.addEventListener(
+          'visibilitychange',
+          () => {
+            if (document.visibilityState === 'hidden') {
+              clearTimeout(timer);
+            }
+          },
+          { once: true }
+        );
 
-      // アプリ (or Universal Link) 起動
-      window.location.href = targetUrl;
+        window.location.href = targetUrl;
+      } else if (isIOS) {
+        // --- iOS: フォールバックなし → ユーザがキャンセルしても画面遷移しない ---
+        const targetUrl = deepLink.scheme || webUrl;
+        window.location.href = targetUrl;
+      } else {
+        // その他 (デスクトップなど) は単に Web
+        window.open(webUrl, '_blank');
+      }
     }
 
     /* ----------------- リンク定義 ----------------- */
@@ -166,7 +173,7 @@
       img.src = icon;
       img.alt = label;
       span.textContent = label;
-      btn.addEventListener('click', () => openWithFallback(deep, web));
+      btn.addEventListener('click', () => openWithSmartFallback(deep, web));
       container.appendChild(clone);
     });
   </script>
