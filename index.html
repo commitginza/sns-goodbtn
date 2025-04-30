@@ -7,20 +7,20 @@
   <!-- Tailwind CSS CDN -->
   <script src="https://cdn.tailwindcss.com"></script>
   <style>
-    /* フォールバックで https を開くまでの待機時間 (ms) */
     :root {
-      --fallback-delay: 1200;
+      /* アプリが起動しなかった場合に Web にフォールバックするまでの待機時間 (ms) */
+      --fallback-delay: 1500;
     }
   </style>
 </head>
 <body class="bg-gray-100 text-gray-800 min-h-screen flex flex-col items-center py-10">
   <h1 class="text-2xl font-bold mb-8">SNS クイックランチャー</h1>
 
-  <!-- ===== ボタン用コンポーネント ===== -->
+  <!-- ===== ボタン用テンプレート ===== -->
   <template id="btn-template">
-    <button class="flex items-center gap-3 w-full max-w-md px-4 py-3 mb-4 rounded-2xl shadow hover:shadow-lg transition bg-white text-left">
+    <button class="flex items-center gap-4 w-full max-w-md px-4 py-3 mb-4 rounded-2xl shadow hover:shadow-lg active:scale-[0.98] transition bg-white text-left">
       <img class="w-10 h-10 object-contain" />
-      <span class="flex-1 font-semibold text-lg"></span>
+      <span class="flex-1 font-semibold text-lg truncate"></span>
     </button>
   </template>
 
@@ -33,27 +33,32 @@
      * 2. setTimeout で https へ遷移 (アプリが起動すれば JS 実行中断)
      */
     function openWithFallback(deepLink, webUrl) {
-      const isIOS = /iP(hone|od|ad)/.test(navigator.userAgent);
+      const delay = parseInt(getComputedStyle(document.documentElement).getPropertyValue('--fallback-delay'));
 
-      // iOS: iframe で scheme、Android: intent:// or scheme→iframe → fallback
-      const now = Date.now();
+      const ua = navigator.userAgent.toLowerCase();
+      const isAndroid = ua.indexOf('android') > -1;
+      const isIOS = /iphone|ipad|ipod/.test(ua);
 
-      // iOS Safari は iframe で scheme 起動が最も安定
-      const tryUrl = deepLink.intent || deepLink.scheme || webUrl;
+      // Android は intent 優先 → scheme → web
+      // iOS は scheme 優先 (Safari) → web
+      const targetUrl = isAndroid
+        ? deepLink.intent || deepLink.scheme || webUrl
+        : deepLink.scheme || webUrl;
 
-      // hidden iframe method
-      const iframe = document.createElement('iframe');
-      iframe.style.display = 'none';
-      iframe.src = tryUrl;
-      document.body.appendChild(iframe);
+      // フォールバック用タイマー
+      const timer = setTimeout(() => {
+        window.location.href = webUrl;
+      }, delay);
 
-      setTimeout(() => {
-        const elapsed = Date.now() - now;
-        if (elapsed < parseInt(getComputedStyle(document.documentElement).getPropertyValue('--fallback-delay'))) {
-          window.location.href = webUrl;
+      // 背景に遷移したら (= アプリ起動成功) タイマーを解除
+      document.addEventListener('visibilitychange', () => {
+        if (document.visibilityState === 'hidden') {
+          clearTimeout(timer);
         }
-        document.body.removeChild(iframe);
-      }, parseInt(getComputedStyle(document.documentElement).getPropertyValue('--fallback-delay')));
+      }, { once: true });
+
+      // アプリ (or Universal Link) 起動
+      window.location.href = targetUrl;
     }
 
     /* ----------------- リンク定義 ----------------- */
