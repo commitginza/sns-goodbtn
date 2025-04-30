@@ -26,40 +26,44 @@
      * Deep‑Link 起動（TikTok だけ Web 専用）
      * deep が null の場合は必ず Web へ遷移
      */
-    function handleClick({ deep, web, bulkUrls }, btn) {
-      // 押したボタンを反転（複数同時保持）
-      if (!btn.dataset.selected) {
-        btn.classList.remove('bg-white');
-        btn.classList.add('bg-gray-800', 'text-white');
-        btn.dataset.selected = 'true';
+    /** 共通クリック処理 */
+    function handleClick({deep, web, bulkUrls}, btn){
+      // 押下ボタン配色反転(複数保持)
+      if(!btn.dataset.selected){
+        btn.classList.replace('bg-white','bg-gray-800');
+        btn.classList.add('text-white');
+        btn.dataset.selected='true';
       }
-      if (Array.isArray(bulkUrls)) {
-        bulkUrls.forEach(u => window.open(u, '_blank'));
-        return;
-      }
-      // --- deeplink 無しなら単に Web
-      if (!deep) {
-        window.open(web, '_blank');
+
+      /* 1. まとめ検索: 0.5 秒毎に順番に開く */
+      if(Array.isArray(bulkUrls)){
+        bulkUrls.forEach((u,i)=>{
+          setTimeout(()=>{
+            const url = u.includes('google.com') ? (u+(u.includes('?')?'&':'?')+'igu=1') : u; // igu=1 で Google アプリ起動防止
+            window.open(url,'_blank','noopener,noreferrer');
+          }, i*500);
+        });
         return;
       }
 
-      // --- 以降は以前の deep link ロジック ---
-      const ua = navigator.userAgent.toLowerCase();
-      const isAndroid = ua.includes('android');
-      const isIOS = /iphone|ipad|ipod/.test(ua);
+      /* 2. deep が無い(TikTok) → Web */
+      if(!deep){window.open(web,'_blank','noopener,noreferrer');return;}
 
-      if (isAndroid) {
-        const targetUrl = deep.intent || deep.scheme || web;
-        const delay = parseInt(getComputedStyle(document.documentElement).getPropertyValue('--android-fallback-delay'));
-        const timer = setTimeout(() => window.location.href = web, delay);
-        document.addEventListener('visibilitychange', () => {
-          if (document.visibilityState === 'hidden') clearTimeout(timer);
-        }, { once: true });
-        window.location.href = targetUrl;
-      } else if (isIOS) {
-        window.location.href = deep.scheme || web;
-      } else {
-        window.open(web, '_blank');
+      /* 3. DeepLink 処理 */
+      const ua=navigator.userAgent.toLowerCase();
+      const isAndroid=ua.includes('android');
+      const isIOS=/iphone|ipad|ipod/.test(ua);
+
+      if(isAndroid){
+        const target=deep.intent||deep.scheme||web;
+        const delay=parseInt(getComputedStyle(document.documentElement).getPropertyValue('--android-fallback-delay'));
+        const timer=setTimeout(()=>location.href=web,delay);
+        document.addEventListener('visibilitychange',()=>{if(document.visibilityState==='hidden')clearTimeout(timer)},{once:true});
+        location.href=target;
+      }else if(isIOS){
+        location.href=deep.scheme||web;
+      }else{
+        window.open(web,'_blank','noopener,noreferrer');
       }
     }
     /* ----------------- リンク定義 ----------------- */
