@@ -1,0 +1,169 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>SNS Quick Launcher</title>
+  <!-- Tailwind CSS CDN -->
+  <script src="https://cdn.tailwindcss.com"></script>
+  <style>
+    /* フォールバックで https を開くまでの待機時間 (ms) */
+    :root {
+      --fallback-delay: 1200;
+    }
+  </style>
+</head>
+<body class="bg-gray-100 text-gray-800 min-h-screen flex flex-col items-center py-10">
+  <h1 class="text-2xl font-bold mb-8">SNS クイックランチャー</h1>
+
+  <!-- ===== ボタン用コンポーネント ===== -->
+  <template id="btn-template">
+    <button class="flex items-center gap-3 w-full max-w-md px-4 py-3 mb-4 rounded-2xl shadow hover:shadow-lg transition bg-white text-left">
+      <img class="w-10 h-10 object-contain" />
+      <span class="flex-1 font-semibold text-lg"></span>
+    </button>
+  </template>
+
+  <div id="buttons" class="w-full max-w-md"></div>
+
+  <script>
+    /**
+     * ディープリンク → アプリ起動失敗時に Web へフォールバック
+     * 1. hidden iframe or location.href で custom scheme / intent を呼ぶ
+     * 2. setTimeout で https へ遷移 (アプリが起動すれば JS 実行中断)
+     */
+    function openWithFallback(deepLink, webUrl) {
+      const isIOS = /iP(hone|od|ad)/.test(navigator.userAgent);
+
+      // iOS: iframe で scheme、Android: intent:// or scheme→iframe → fallback
+      const now = Date.now();
+
+      // iOS Safari は iframe で scheme 起動が最も安定
+      const tryUrl = deepLink.intent || deepLink.scheme || webUrl;
+
+      // hidden iframe method
+      const iframe = document.createElement('iframe');
+      iframe.style.display = 'none';
+      iframe.src = tryUrl;
+      document.body.appendChild(iframe);
+
+      setTimeout(() => {
+        const elapsed = Date.now() - now;
+        if (elapsed < parseInt(getComputedStyle(document.documentElement).getPropertyValue('--fallback-delay'))) {
+          window.location.href = webUrl;
+        }
+        document.body.removeChild(iframe);
+      }, parseInt(getComputedStyle(document.documentElement).getPropertyValue('--fallback-delay')));
+    }
+
+    /* ----------------- リンク定義 ----------------- */
+    const links = [
+      // --- コミット銀座 ---
+      {
+        label: 'TikTok (コミット銀座)',
+        icon: 'https://www.svgrepo.com/show/475689/tiktok-color.svg',
+        deep: {
+          scheme: 'tiktok://user/@commit_ginza',
+          intent: 'intent://www.tiktok.com/@commit_ginza#Intent;package=com.zhiliaoapp.musically;scheme=https;end'
+        },
+        web: 'https://www.tiktok.com/@commit_ginza'
+      },
+      {
+        label: 'Instagram (コミット銀座)',
+        icon: 'https://www.svgrepo.com/show/452231/instagram-1.svg',
+        deep: {
+          scheme: 'instagram://user?username=commit_official'
+        },
+        web: 'https://www.instagram.com/commit_official?igsh=cXQxcGEzdGlob3Nk'
+      },
+      {
+        label: 'X / Twitter (コミット銀座)',
+        icon: 'https://www.svgrepo.com/show/475689/twitter-color.svg',
+        deep: {
+          scheme: 'twitter://user?screen_name=commitginza'
+        },
+        web: 'https://x.com/commitginza'
+      },
+      {
+        label: 'Facebook (コミット銀座)',
+        icon: 'https://www.svgrepo.com/show/349576/facebook.svg',
+        deep: {
+          scheme: 'fb://facewebmodal/f?href=https://www.facebook.com/commitginza'
+        },
+        web: 'https://www.facebook.com/commitginza'
+      },
+      {
+        label: 'YouTube (コミット銀座)',
+        icon: 'https://www.svgrepo.com/show/452229/youtube.svg',
+        deep: {
+          scheme: 'vnd.youtube://youtube.com/@commit-ginza'
+        },
+        web: 'https://youtube.com/@commit-ginza'
+      },
+
+      // --- 大津祐樹 ---
+      {
+        label: 'TikTok (大津祐樹)',
+        icon: 'https://www.svgrepo.com/show/475689/tiktok-color.svg',
+        deep: {
+          scheme: 'tiktok://user/@o2yuki0324'
+        },
+        web: 'https://www.tiktok.com/@o2yuki0324'
+      },
+      {
+        label: 'Instagram (大津祐樹)',
+        icon: 'https://www.svgrepo.com/show/452231/instagram-1.svg',
+        deep: {
+          scheme: 'instagram://user?username=o2yuki'
+        },
+        web: 'https://www.instagram.com/o2yuki?igsh=MXM0eHBhdTZ4bm9kZg=='
+      },
+
+      // --- スペリオ城北 ---
+      {
+        label: 'Instagram (スペリオ城北)',
+        icon: 'https://www.svgrepo.com/show/452231/instagram-1.svg',
+        deep: {
+          scheme: 'instagram://user?username=sperio.johoku'
+        },
+        web: 'https://www.instagram.com/sperio.johoku?igsh=MWdzOWZsc3hpbHpqMg=='
+      },
+
+      // --- フットボールアシスト ---
+      {
+        label: 'Instagram (フットボールアシスト)',
+        icon: 'https://www.svgrepo.com/show/452231/instagram-1.svg',
+        deep: {
+          scheme: 'instagram://user?username=f00tballassist'
+        },
+        web: 'https://www.instagram.com/f00tballassist?igsh=ZzZtYmxiNXJiNDNp'
+      },
+      {
+        label: 'X / Twitter (フットボールアシスト)',
+        icon: 'https://www.svgrepo.com/show/475689/twitter-color.svg',
+        deep: {
+          scheme: 'twitter://user?screen_name=footballassist1'
+        },
+        web: 'https://x.com/footballassist1'
+      }
+    ];
+
+    /* ----------------- DOM 生成 ----------------- */
+    const container = document.getElementById('buttons');
+    const tpl = document.getElementById('btn-template').content;
+
+    links.forEach(({ label, icon, deep, web }) => {
+      const clone = tpl.cloneNode(true);
+      const btn = clone.querySelector('button');
+      const img = clone.querySelector('img');
+      const span = clone.querySelector('span');
+
+      img.src = icon;
+      img.alt = label;
+      span.textContent = label;
+      btn.addEventListener('click', () => openWithFallback(deep, web));
+      container.appendChild(clone);
+    });
+  </script>
+</body>
+</html>
