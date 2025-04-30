@@ -1,18 +1,19 @@
 <!DOCTYPE html>
 <html lang="ja">
 <head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>SNS Quick Launcher</title>
-  <!-- Tailwind CDN -->
   <script src="https://cdn.tailwindcss.com"></script>
+  <style>
+    :root { --android-fallback-delay: 1500; }
+  </style>
 </head>
 <body class="bg-gray-100 text-gray-800 min-h-screen flex flex-col items-center py-10">
   <h1 class="text-2xl font-bold mb-8">SNS クイックランチャー</h1>
 
-  <!-- ボタンテンプレート -->
   <template id="btn-template">
-    <button class="flex items-center gap-4 w-full max-w-md px-4 py-3 mb-4 rounded-2xl shadow transition-colors bg-white text-left">
+    <button class="flex items-center gap-4 w-full max-w-md px-4 py-3 mb-4 rounded-2xl shadow hover:shadow-lg active:scale-[0.98] transition bg-white text-left">
       <img class="w-10 h-10 object-contain" />
       <span class="flex-1 font-semibold text-lg truncate"></span>
     </button>
@@ -22,92 +23,143 @@
 
   <script>
     /**
-     * クリックで Web プロフィールを新規タブで開き、
-     * 同時にボタン配色を反転させる（ページ再読込でリセット）
+     * Deep‑Link 起動（TikTok だけ Web 専用）
+     * deep が null の場合は必ず Web へ遷移
      */
-    function handleClick(btn, url) {
-      btn.classList.toggle('bg-white');
-      btn.classList.toggle('bg-gray-800');
-      btn.classList.toggle('text-white');
-      window.open(url, '_blank');
-    }
+    function openWithSmartFallback(deep, webUrl, btn) {
+      // 押したボタンを反転（複数同時保持）
+      if (!btn.dataset.selected) {
+        btn.classList.remove('bg-white');
+        btn.classList.add('bg-gray-800', 'text-white');
+        btn.dataset.selected = 'true';
+      }
 
+      // --- deeplink 無しなら単に Web
+      if (!deep) {
+        window.open(webUrl, '_blank');
+        return;
+      }
+
+      // --- 以降は以前の deep link ロジック ---
+      const ua = navigator.userAgent.toLowerCase();
+      const isAndroid = ua.includes('android');
+      const isIOS = /iphone|ipad|ipod/.test(ua);
+
+      if (isAndroid) {
+        const targetUrl = deep.intent || deep.scheme || webUrl;
+        const delay = parseInt(getComputedStyle(document.documentElement).getPropertyValue('--android-fallback-delay'));
+        const timer = setTimeout(() => window.location.href = webUrl, delay);
+        document.addEventListener('visibilitychange', () => {
+          if (document.visibilityState === 'hidden') clearTimeout(timer);
+        }, { once: true });
+        window.location.href = targetUrl;
+      } else if (isIOS) {
+        window.location.href = deep.scheme || webUrl;
+      } else {
+        window.open(webUrl, '_blank');
+      }
+    }
     /* ----------------- リンク定義 ----------------- */
     const links = [
       // --- コミット銀座 ---
       {
         label: 'TikTok (コミット銀座)',
         icon: 'https://images.icon-icons.com/3041/PNG/512/tiktok_logo_icon_189233.png',
-        url: 'https://www.tiktok.com/@commit_ginza'
+        deep: null,
+        web: 'https://www.tiktok.com/@commit_ginza'
       },
       {
         label: 'Instagram (コミット銀座)',
         icon: 'https://static.xx.fbcdn.net/rsrc.php/v4/yx/r/tBxa1IFcTQH.png',
-        url: 'https://www.instagram.com/commit_official?igsh=cXQxcGEzdGlob3Nk'
+        deep: {
+          scheme: 'instagram://user?username=commit_official'
+        },
+        web: 'https://www.instagram.com/commit_official?igsh=cXQxcGEzdGlob3Nk'
       },
       {
         label: 'X / Twitter (コミット銀座)',
         icon: 'https://cdn.cms-twdigitalassets.com/content/dam/about-twitter/x/brand-toolkit/logo-black.png.twimg.2560.png',
-        url: 'https://x.com/commitginza'
+        deep: {
+          scheme: 'twitter://user?screen_name=commitginza'
+        },
+        web: 'https://x.com/commitginza'
       },
       {
         label: 'Facebook (コミット銀座)',
         icon: 'https://upload.wikimedia.org/wikipedia/commons/thumb/0/05/Facebook_Logo_%282019%29.png/1200px-Facebook_Logo_%282019%29.png',
-        url: 'https://www.facebook.com/commitginza'
+        deep: {
+          scheme: 'fb://facewebmodal/f?href=https://www.facebook.com/commitginza'
+        },
+        web: 'https://www.facebook.com/commitginza'
       },
       {
         label: 'YouTube (コミット銀座)',
         icon: 'https://images.icon-icons.com/2699/PNG/512/youtube_logo_icon_168737.png',
-        url: 'https://youtube.com/@commit-ginza'
+        deep: {
+          scheme: 'vnd.youtube://youtube.com/@commit-ginza'
+        },
+        web: 'https://youtube.com/@commit-ginza'
       },
 
       // --- 大津祐樹 ---
       {
         label: 'TikTok (大津祐樹)',
         icon: 'https://images.icon-icons.com/3041/PNG/512/tiktok_logo_icon_189233.png',
-        url: 'https://www.tiktok.com/@o2yuki0324'
+        deep: null,
+        web: 'https://www.tiktok.com/@o2yuki0324'
       },
       {
         label: 'Instagram (大津祐樹)',
         icon: 'https://static.xx.fbcdn.net/rsrc.php/v4/yx/r/tBxa1IFcTQH.png',
-        url: 'https://www.instagram.com/o2yuki?igsh=MXM0eHBhdTZ4bm9kZg=='
+        deep: {
+          scheme: 'instagram://user?username=o2yuki'
+        },
+        web: 'https://www.instagram.com/o2yuki?igsh=MXM0eHBhdTZ4bm9kZg=='
       },
 
       // --- スペリオ城北 ---
       {
         label: 'Instagram (スペリオ城北)',
         icon: 'https://static.xx.fbcdn.net/rsrc.php/v4/yx/r/tBxa1IFcTQH.png',
-        url: 'https://www.instagram.com/sperio.johoku?igsh=MWdzOWZsc3hpbHpqMg=='
+        deep: {
+          scheme: 'instagram://user?username=sperio.johoku'
+        },
+        web: 'https://www.instagram.com/sperio.johoku?igsh=MWdzOWZsc3hpbHpqMg=='
       },
 
       // --- フットボールアシスト ---
       {
         label: 'Instagram (フットボールアシスト)',
         icon: 'https://static.xx.fbcdn.net/rsrc.php/v4/yx/r/tBxa1IFcTQH.png',
-        url: 'https://www.instagram.com/f00tballassist?igsh=ZzZtYmxiNXJiNDNp'
+        deep: {
+          scheme: 'instagram://user?username=f00tballassist'
+        },
+        web: 'https://www.instagram.com/f00tballassist?igsh=ZzZtYmxiNXJiNDNp'
       },
       {
         label: 'X / Twitter (フットボールアシスト)',
         icon: 'https://cdn.cms-twdigitalassets.com/content/dam/about-twitter/x/brand-toolkit/logo-black.png.twimg.2560.png',
-        url: 'https://x.com/footballassist1'
+        deep: {
+          scheme: 'twitter://user?screen_name=footballassist1'
+        },
+        web: 'https://x.com/footballassist1'
       }
     ];
 
-    // ---- DOM 生成 ----
+    // --------------- DOM 生成 ----------------
     const container = document.getElementById('buttons');
     const tpl = document.getElementById('btn-template').content;
 
-    links.forEach(({ label, icon, url }) => {
+    links.forEach(({ label, icon, deep, web }) => {
       const clone = tpl.cloneNode(true);
-      const btn   = clone.querySelector('button');
-      const img   = clone.querySelector('img');
-      const span  = clone.querySelector('span');
+      const btn = clone.querySelector('button');
+      const img = clone.querySelector('img');
+      const span = clone.querySelector('span');
 
       img.src = icon;
       img.alt = label;
       span.textContent = label;
-
-      btn.addEventListener('click', () => handleClick(btn, url));
+      btn.addEventListener('click', () => openWithSmartFallback(deep, web, btn));
       container.appendChild(clone);
     });
   </script>
