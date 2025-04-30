@@ -39,13 +39,17 @@
       if(Array.isArray(bulkUrls)){
         bulkUrls.forEach((u,i)=>{
           setTimeout(()=>{
-            const newTab = window.open(u,'_blank','noopener');
-            if(newTab){ newTab.blur(); window.focus(); } // フォーカスを元の画面に戻す
+            const newTab = window.open('about:blank','_blank','noopener');
+            if(newTab){
+              newTab.location.href = u;
+              newTab.blur();
+              window.focus();
+            }
           }, i*500);
         });
         return;
       }
-
+      
       /* 2. deep が無い(TikTok) → Web */
       if(!deep){window.open(web,'_blank','noopener,noreferrer');return;}
 
