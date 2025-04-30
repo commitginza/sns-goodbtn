@@ -20,14 +20,7 @@
   </template>
 
   <div id="buttons" class="w-full max-w-md"></div>
-  <p style="color:gray;font-size:12px;">*「まとめ検索」実行時にブラウザの仕様でポップアップがブロックされる場合は、許可設定をしてください</p>
-<!-- まとめ検索進行状況モーダル -->
-<div id="bulk-modal"
-     class="fixed inset-0 z-50 hidden bg-black/60 flex items-center justify-center">
-  <div class="bg-white rounded-xl p-6 text-center w-64">
-    <p id="bulk-text" class="font-semibold mb-4"></p>
-  </div>
-</div>
+  <div id="bulk-links" class="w-full max-w-md mt-4"></div>
   <script>
     /**
      * Deep‑Link 起動（TikTok だけ Web 専用）
@@ -42,32 +35,47 @@
         btn.dataset.selected='true';
       }
 
-/* 1. まとめ検索: モーダル表示 → 1件開いたら次へ */
-if (Array.isArray(bulkUrls)) {
-  const modal     = document.getElementById('bulk-modal');
-  const modalText = document.getElementById('bulk-text');
-
-  let i = 0;
-  const openNext = () => {
-    if (i >= bulkUrls.length) {
-      modal.classList.add('hidden');           // 完了したら閉じる
-      return;
-    }
-    modalText.textContent = `「${bulkUrls[i]}」を開いています…`;
-    modal.classList.remove('hidden');
-
-    /* 背景タブで開く → 0.7 秒後に次へ */
-    window.open(bulkUrls[i], '_blank', 'noopener');
-    setTimeout(() => {
-      modal.classList.add('hidden');           // 一瞬隠して
-      i++;                                     // 次の URL へ
-      openNext();                              // 再帰
-    }, 700);
-  };
-
-  openNext();      // 開始
-  return;
-}
+      /* 1. まとめ検索: 個別リンクボタンを生成して下部に表示 */
+      if (Array.isArray(bulkUrls)) {
+        const container = document.getElementById('bulk-links');
+      
+        /* 2回目以降は何もしない */
+        if (container.childElementCount) return;
+      
+        bulkUrls.forEach((u, idx) => {
+          // 表示用テキストを分かりやすく作る（Google 検索はクエリ末尾だけ）
+          const label = u.includes('google.com')
+            ? decodeURIComponent(u.split('q=')[1] || `検索 ${idx + 1}`)
+            : 'note記事';
+      
+          // ボタン生成
+          const linkBtn = document.createElement('button');
+          linkBtn.className =
+            'flex items-center gap-2 w-full px-3 py-2 mb-2 rounded-lg bg-white shadow text-sm text-left';
+          linkBtn.dataset.selected = '';
+      
+          linkBtn.innerHTML = `
+            <span class="flex-1 truncate">${label}</span>
+            <svg xmlns="http://www.w3.org/2000/svg" class="w-4 h-4" fill="none"
+                 stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+              <path d="M9 5l7 7-7 7" stroke-linecap="round" stroke-linejoin="round"/>
+            </svg>`;
+      
+          // クリックで反転＆別タブ表示
+          linkBtn.addEventListener('click', () => {
+            if (!linkBtn.dataset.selected) {
+              linkBtn.classList.replace('bg-white', 'bg-gray-800');
+              linkBtn.classList.add('text-white');
+              linkBtn.dataset.selected = 'true';
+            }
+            window.open(u, '_blank', 'noopener');
+          });
+      
+          container.appendChild(linkBtn);
+        });
+      
+        return; // ここで処理終了
+      }
       
       /* 2. deep が無い(TikTok) → Web */
       if(!deep){window.open(web,'_blank','noopener,noreferrer');return;}
