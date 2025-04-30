@@ -35,12 +35,12 @@
         btn.dataset.selected='true';
       }
 
-      /* 1. まとめ検索: 0.5 秒毎に順番に開く */
+      /* 1. まとめ検索: 背景タブで順番に開く */
       if(Array.isArray(bulkUrls)){
         bulkUrls.forEach((u,i)=>{
           setTimeout(()=>{
-            const url = u.includes('google.com') ? (u+(u.includes('?')?'&':'?')+'igu=1') : u; // igu=1 で Google アプリ起動防止
-            window.open(url,'_blank','noopener,noreferrer');
+            const newTab = window.open(u,'_blank','noopener');
+            if(newTab){ newTab.blur(); window.focus(); } // フォーカスを元の画面に戻す
           }, i*500);
         });
         return;
