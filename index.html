@@ -41,12 +41,30 @@
       
         /* 2回目以降は何もしない */
         if (container.childElementCount) return;
-      
+
+        // ドメインごとの表示ラベルをここにまとめておく
+        const DOMAIN_LABEL_MAP = {
+          'note.com':        'note記事',
+          'watch-log.jp':     'watch-log投稿'
+        };
+
         bulkUrls.forEach((u, idx) => {
-          // 表示用テキストを分かりやすく作る（Google 検索はクエリ末尾だけ）
-          const label = u.includes('google.com')
-            ? decodeURIComponent(u.split('q=')[1] || `検索 ${idx + 1}`)
-            : 'note記事';
+          let label;
+          try {
+            const urlObj = new URL(u); // 例外が出ることがあるので try-catch
+            const host   = urlObj.hostname.replace(/^www\./, ''); // www は取っちゃう
+        
+            if (host.endsWith('google.com') && urlObj.searchParams.has('q')) {
+              // Google 検索結果 → クエリ文字列だけ抜き出してデコード
+              label = decodeURIComponent(urlObj.searchParams.get('q'));
+            } else {
+              // それ以外 → ドメイン判定
+              label = DOMAIN_LABEL_MAP[host] ?? `${host} ページ`;
+            }
+          } catch (e) {
+            // 万一 URL としてパースできなかった場合
+            label = `リンク ${idx + 1}`;
+          }
       
           // ボタン生成
           const linkBtn = document.createElement('button');
