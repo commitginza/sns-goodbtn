@@ -1,336 +1,308 @@
 <!DOCTYPE html>
 <html lang="ja">
 <head>
-  <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>SNS Quick Launcher</title>
-  <script src="https://cdn.tailwindcss.com"></script>
-  <style>
-    :root { --android-fallback-delay: 1500; }
-  </style>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>SNS Launcher</title>
+<script src="https://cdn.tailwindcss.com"></script>
+<style>
+  :root { --android-fallback-delay: 1500; }
+  summary::-webkit-details-marker { display:none }
+</style>
 </head>
-<body class="bg-gray-100 text-gray-800 min-h-screen flex flex-col items-center py-10">
-  <h1 class="text-2xl font-bold mb-8">SNS クイックランチャー</h1>
+<body class="bg-gray-100 text-gray-800 min-h-screen">
+  <header class="sticky top-0 z-20 bg-gray-100/95 backdrop-blur border-b border-gray-200">
+    <div class="max-w-4xl mx-auto px-4 py-3 flex items-center gap-3">
+      <h1 class="text-xl font-bold flex-1">SNS Launcher</h1>
+      <button id="expandAll" class="text-sm px-3 py-1.5 rounded-lg bg-white shadow">全展開</button>
+      <button id="collapseAll" class="text-sm px-3 py-1.5 rounded-lg bg-white shadow">全折りたたみ</button>
+    </div>
+    <div class="max-w-4xl mx-auto px-4 pb-3">
+      <div id="companyChips" class="mt-1 flex gap-2 overflow-x-auto pb-1"></div>
+    </div>
+  </header>
 
+  <!-- ラベル付きボタン -->
   <template id="btn-template">
-    <button class="flex items-center gap-4 w-full max-w-md px-4 py-3 mb-4 rounded-2xl shadow hover:shadow-lg active:scale-[0.98] transition bg-white text-left">
-      <img class="w-10 h-10 object-contain" />
-      <span class="flex-1 font-semibold text-lg truncate"></span>
+    <button class="group w-full flex items-center gap-3 px-3 py-3 rounded-2xl bg-white text-gray-800 shadow hover:shadow-lg active:scale-[0.98] transition text-left">
+      <img class="h-10 w-10 sm:h-12 sm:w-12 object-contain rounded" />
+      <span class="flex-1 font-medium text-[15px] leading-tight truncate"></span>
+      <svg xmlns="http://www.w3.org/2000/svg" class="w-4 h-4 opacity-60 group-hover:opacity-100" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M9 5l7 7-7 7" stroke-linecap="round" stroke-linejoin="round"/></svg>
     </button>
   </template>
 
-  <div id="buttons" class="w-full max-w-md"></div>
-  <div id="bulk-links" class="w-full max-w-md mt-4"></div>
-  <script>
-    /**
-     * Deep‑Link 起動（TikTok だけ Web 専用）
-     * deep が null の場合は必ず Web へ遷移
-     */
-    /** 共通クリック処理 */
-    function handleClick({deep, web, bulkUrls}, btn){
-      // 押下ボタン配色反転(複数保持)
-      if(!btn.dataset.selected){
-        btn.classList.replace('bg-white','bg-gray-800');
-        btn.classList.add('text-white');
-        btn.dataset.selected='true';
-      }
+  <main id="root" class="max-w-4xl mx-auto px-4 py-6 space-y-6"></main>
+  <section id="bulk-links" class="max-w-4xl mx-auto px-4 pb-10"></section>
 
-      /* 1. まとめ検索: 個別リンクボタンを生成して下部に表示 */
-      if (Array.isArray(bulkUrls)) {
-        const container = document.getElementById('bulk-links');
-      
-        /* 2回目以降は何もしない */
-        if (container.childElementCount) return;
+<script>
+function flip(btn){
+  btn.classList.toggle('bg-white');
+  btn.classList.toggle('text-gray-800');
+  btn.classList.toggle('bg-gray-800');
+  btn.classList.toggle('text-white');
+}
 
-        // ドメインごとの表示ラベルをここにまとめておく
-        const DOMAIN_LABEL_MAP = {
-          'note.com':        'note記事',
-          'watch-log.jp':     'watch-log投稿'
-        };
+function buildAndroidIntent(schemeUrl, pkg, fallbackWeb){
+  try{
+    const u = new URL(schemeUrl);
+    const path = u.href.split('://')[1];
+    const scheme = u.protocol.replace(':','');
+    const encFallback = encodeURIComponent(fallbackWeb || '');
+    return `intent://${path}#Intent;scheme=${scheme};package=${pkg};S.browser_fallback_url=${encFallback};end`;
+  }catch(e){ return null; }
+}
 
-        bulkUrls.forEach((u, idx) => {
-          let label;
-          try {
-            const urlObj = new URL(u); // 例外が出ることがあるので try-catch
-            const host   = urlObj.hostname.replace(/^www\./, ''); // www は取っちゃう
-        
-            if (host.endsWith('google.com') && urlObj.searchParams.has('q')) {
-              // Google 検索結果 → クエリ文字列だけ抜き出してデコード
-              label = decodeURIComponent(urlObj.searchParams.get('q'));
-            } else {
-              // それ以外 → ドメイン判定
-              label = DOMAIN_LABEL_MAP[host] ?? `${host} ページ`;
-            }
-          } catch (e) {
-            // 万一 URL としてパースできなかった場合
-            label = `リンク ${idx + 1}`;
-          }
-      
-          // ボタン生成
-          const linkBtn = document.createElement('button');
-          linkBtn.className =
-            'flex items-center gap-2 w-full px-3 py-2 mb-2 rounded-lg bg-white shadow text-sm text-left';
-          linkBtn.dataset.selected = '';
-      
-          linkBtn.innerHTML = `
-            <span class="flex-1 truncate">${label}</span>
-            <svg xmlns="http://www.w3.org/2000/svg" class="w-4 h-4" fill="none"
-                 stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
-              <path d="M9 5l7 7-7 7" stroke-linecap="round" stroke-linejoin="round"/>
-            </svg>`;
-      
-          // クリックで反転＆別タブ表示
-          linkBtn.addEventListener('click', () => {
-            if (!linkBtn.dataset.selected) {
-              linkBtn.classList.replace('bg-white', 'bg-gray-800');
-              linkBtn.classList.add('text-white');
-              linkBtn.dataset.selected = 'true';
-            }
-            window.open(u, '_blank', 'noopener');
-          });
-      
-          container.appendChild(linkBtn);
-        });
-      
-        return; // ここで処理終了
-      }
-      
-      /* 2. deep が無い(TikTok) → Web */
-      if(!deep){window.open(web,'_blank','noopener,noreferrer');return;}
+function handleClick({deep, web, bulkUrls}, btn){
+  // まとめリンクは全て別タブでWeb
+  if (Array.isArray(bulkUrls)) {
+    const container = document.getElementById('bulk-links');
+    if (container.childElementCount) return;
+    const DOMAIN_LABEL_MAP = { 'note.com':'note記事', 'watch-log.jp':'watch-log投稿' };
+    bulkUrls.forEach((u, idx) => {
+      let label;
+      try{
+        const urlObj=new URL(u);
+        const host=urlObj.hostname.replace(/^www\./,'');
+        label = (host.endsWith('google.com') && urlObj.searchParams.has('q'))
+          ? decodeURIComponent(urlObj.searchParams.get('q'))
+          : (DOMAIN_LABEL_MAP[host] ?? `${host} ページ`);
+      }catch(e){ label=`リンク ${idx+1}`; }
 
-      /* 3. DeepLink 処理 */
-      const ua=navigator.userAgent.toLowerCase();
-      const isAndroid=ua.includes('android');
-      const isIOS=/iphone|ipad|ipod/.test(ua);
+      const linkBtn=document.createElement('button');
+      linkBtn.className='flex items-center gap-2 w-full px-3 py-2 mb-2 rounded-lg bg-white text-gray-800 shadow text-sm text-left';
+      linkBtn.innerHTML=`<span class="flex-1 truncate">${label}</span>
+        <svg xmlns="http://www.w3.org/2000/svg" class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M9 5l7 7-7 7" stroke-linecap="round" stroke-linejoin="round"/></svg>`;
+       linkBtn.addEventListener('click',(e)=>{
+         e.preventDefault();
+         window.open(u,'_blank','noopener,noreferrer');
+         flip(linkBtn);
+       });
+      container.appendChild(linkBtn);
+    });
+    flip(btn);
+    return;
+  }
 
-      if(isAndroid){
-        const target=deep.intent||deep.scheme||web;
-        const delay=parseInt(getComputedStyle(document.documentElement).getPropertyValue('--android-fallback-delay'));
-        const timer=setTimeout(()=>location.href=web,delay);
-        document.addEventListener('visibilitychange',()=>{if(document.visibilityState==='hidden')clearTimeout(timer)},{once:true});
-        location.href=target;
-      }else if(isIOS){
-        location.href=deep.scheme||web;
-      }else{
-        window.open(web,'_blank','noopener,noreferrer');
-      }
+  // --- ここで端末判定 ---
+  const ua = navigator.userAgent || '';
+  const isMobile = /android|iphone|ipad|ipod/i.test(ua);
+  // PCはWebを別タブで開いてから反転
+  if (!isMobile) {
+    window.open(web,'_blank','noopener,noreferrer');
+    flip(btn);
+    return;
+  }
+
+  // モバイルのみDeepを試行（失敗時Web）
+  const isAndroid = /android/i.test(ua);
+  const isIOS = /iphone|ipad|ipod/i.test(ua);
+
+  if(!deep){
+    const w = window.open(web,'_blank','noopener,noreferrer');
+    if(!w) location.href = web;
+    flip(btn);
+    return;
+  }
+
+  if(isAndroid){
+    const pkgMap = { instagram:'com.instagram.android', twitter:'com.twitter.android', fb:'com.facebook.katana' };
+    const scheme = (deep.scheme || '').split(':')[0];
+    const intentUrl = buildAndroidIntent(deep.scheme, pkgMap[scheme] || '', web);
+    let w = intentUrl ? window.open(intentUrl,'_blank') : null;
+    if(!w){
+      w = window.open(web,'_blank','noopener,noreferrer');
+      if(!w) location.href = web;
     }
-    /* ----------------- リンク定義 ----------------- */
-    const links = [
-      // --- コミット銀座 ---
-      {
-        label: 'TikTok (コミット銀座)',
-        icon: 'https://images.icon-icons.com/3041/PNG/512/tiktok_logo_icon_189233.png',
-        deep: null,
-        web: 'https://www.tiktok.com/@commit_ginza'
-      },
-      {
-        label: 'Instagram (コミット銀座)',
-        icon: 'https://static.xx.fbcdn.net/rsrc.php/v4/yx/r/tBxa1IFcTQH.png',
-        deep: {
-          scheme: 'instagram://user?username=commit_official'
-        },
-        web: 'https://www.instagram.com/commit_official?igsh=cXQxcGEzdGlob3Nk'
-      },
-      {
-        label: 'Instagram (コミット銀座_ヴィンテージ)',
-        icon: 'https://static.xx.fbcdn.net/rsrc.php/v4/yx/r/tBxa1IFcTQH.png',
-        deep: {
-          scheme: 'instagram://user?username=commit_vintage_rolex'
-        },
-        web: 'https://www.instagram.com/commit_vintage_rolex/'
-      },
-      {
-        label: 'Instagram (コミット銀座_パテック)',
-        icon: 'https://static.xx.fbcdn.net/rsrc.php/v4/yx/r/tBxa1IFcTQH.png',
-        deep: {
-          scheme: 'instagram://user?username=commit__super_expensive'
-        },
-        web: 'https://www.instagram.com/commit__super_expensive/'
-      },
-      {
-        label: 'Instagram (コミカレ)',
-        icon: 'https://static.xx.fbcdn.net/rsrc.php/v4/yx/r/tBxa1IFcTQH.png',
-        deep: {
-          scheme: 'instagram://user?username=commit_college'
-        },
-        web: 'https://www.instagram.com/commit_college?igsh=anNraHA0emUwYTho'
-      },
-      {
-        label: 'X / Twitter (コミット銀座)',
-        icon: 'https://cdn.cms-twdigitalassets.com/content/dam/about-twitter/x/brand-toolkit/logo-black.png.twimg.2560.png',
-        deep: {
-          scheme: 'twitter://user?screen_name=commitginza'
-        },
-        web: 'https://x.com/commitginza'
-      },
-      {
-        label: 'Facebook (コミット銀座)',
-        icon: 'https://upload.wikimedia.org/wikipedia/commons/thumb/0/05/Facebook_Logo_%282019%29.png/1200px-Facebook_Logo_%282019%29.png',
-        deep: {
-          scheme: 'fb://facewebmodal/f?href=https://www.facebook.com/commitginza'
-        },
-        web: 'https://www.facebook.com/commitginza'
-      },
-      {
-        label: 'YouTube (コミット銀座)',
-        icon: 'https://images.icon-icons.com/2699/PNG/512/youtube_logo_icon_168737.png',
-        deep: {
-          scheme: 'vnd.youtube://youtube.com/@commit-ginza'
-        },
-        web: 'https://youtube.com/@commit-ginza'
-      },
+    flip(btn);
+    return;
+  }
 
-      // --- 大津祐樹 ---
-      {
-        label: 'TikTok (大津祐樹)',
-        icon: 'https://images.icon-icons.com/3041/PNG/512/tiktok_logo_icon_189233.png',
-        deep: null,
-        web: 'https://www.tiktok.com/@o2yuki0324'
-      },
-      {
-        label: 'Instagram (大津祐樹)',
-        icon: 'https://static.xx.fbcdn.net/rsrc.php/v4/yx/r/tBxa1IFcTQH.png',
-        deep: {
-          scheme: 'instagram://user?username=o2yuki'
-        },
-        web: 'https://www.instagram.com/o2yuki?igsh=MXM0eHBhdTZ4bm9kZg=='
-      },
-      {
-        label: 'X / Twitter (大津祐樹)',
-        icon: 'https://cdn.cms-twdigitalassets.com/content/dam/about-twitter/x/brand-toolkit/logo-black.png.twimg.2560.png',
-        deep: {
-          scheme: 'twitter://user?screen_name=yukiotsu23'
-        },
-        web: 'https://x.com/yukiotsu23'
-      },
+  if(isIOS){
+    let w = deep.scheme ? window.open(deep.scheme,'_blank') : null;
+    if(!w){
+      w = window.open(web,'_blank','noopener,noreferrer');
+      if(!w) location.href = web;
+    }
+    flip(btn);
+    return;
+  }
+}
 
-      // --- スペリオ城北 ---
+/* 会社 → カテゴリ → リンク */
+const DATA = [
+  {
+    company: 'コミット銀座',
+    slug: 'commit',
+    categories: [
       {
-        label: 'Instagram (スペリオ城北)',
-        icon: 'https://static.xx.fbcdn.net/rsrc.php/v4/yx/r/tBxa1IFcTQH.png',
-        deep: {
-          scheme: 'instagram://user?username=sperio.johoku'
-        },
-        web: 'https://www.instagram.com/sperio.johoku?igsh=MWdzOWZsc3hpbHpqMg=='
+        name: '公式アカウント',
+        links: [
+          { label:'OFFICIAL', icon:'https://images.icon-icons.com/3041/PNG/512/tiktok_logo_icon_189233.png', deep:null, web:'https://www.tiktok.com/@commit_ginza' },
+          { label:'OFFICIAL', icon:'https://static.xx.fbcdn.net/rsrc.php/v4/yx/r/tBxa1IFcTQH.png', deep:{scheme:'instagram://user?username=commit_official'}, web:'https://www.instagram.com/commit_official?igsh=cXQxcGEzdGlob3Nk' },
+          { label:'VINTAGE_ROLEX', icon:'https://static.xx.fbcdn.net/rsrc.php/v4/yx/r/tBxa1IFcTQH.png', deep:{scheme:'instagram://user?username=commit_vintage_rolex'}, web:'https://www.instagram.com/commit_vintage_rolex/' },
+          { label:'SUPER_EXPENSIVE', icon:'https://static.xx.fbcdn.net/rsrc.php/v4/yx/r/tBxa1IFcTQH.png', deep:{scheme:'instagram://user?username=commit__super_expensive'}, web:'https://www.instagram.com/commit__super_expensive/' },
+          { label:'COMMIT_COLLEGE', icon:'https://static.xx.fbcdn.net/rsrc.php/v4/yx/r/tBxa1IFcTQH.png', deep:{scheme:'instagram://user?username=commit_college'}, web:'https://www.instagram.com/commit_college?igsh=anNraHA0emUwYTho' },
+          { label:'OFFICIAL', icon:'https://cdn.cms-twdigitalassets.com/content/dam/about-twitter/x/brand-toolkit/logo-black.png.twimg.2560.png', deep:{scheme:'twitter://user?screen_name=commitginza'}, web:'https://x.com/commitginza' },
+          { label:'OFFICIAL', icon:'https://upload.wikimedia.org/wikipedia/commons/thumb/0/05/Facebook_Logo_%282019%29.png/1200px-Facebook_Logo_%282019%29.png', deep:{scheme:'fb://facewebmodal/f?href=https://www.facebook.com/commitginza'}, web:'https://www.facebook.com/commitginza' },
+          { label:'OFFICIAL', icon:'https://images.icon-icons.com/2699/PNG/512/youtube_logo_icon_168737.png', deep:{scheme:'vnd.youtube://youtube.com/@commit-ginza'}, web:'https://youtube.com/@commit-ginza' },
+          { label:'OFFICIAL', icon:'https://upload.wikimedia.org/wikipedia/commons/c/c1/XiaohongshuLOGO.png', deep:null, web:'https://xhslink.com/m/1EOCUzBEUcz' },
+        ]
       },
       {
-        label: 'X / Twitter (スペリオ城北)',
-        icon: 'https://cdn.cms-twdigitalassets.com/content/dam/about-twitter/x/brand-toolkit/logo-black.png.twimg.2560.png',
-        deep: {
-          scheme: 'twitter://user?screen_name=sperio_johoku'
-        },
-        web: 'https://x.com/sperio_johoku'
-      },
-      {
-        label: 'YouTube (スペリオ城北)',
-        icon: 'https://images.icon-icons.com/2699/PNG/512/youtube_logo_icon_168737.png',
-        deep: {
-          scheme: 'vnd.youtube://youtube.com/@footballassist3506'
-        },
-        web: 'https://youtube.com/@footballassist3506'
-      },
-      {
-        label: 'Instagram (スペリオ城北レディース)',
-        icon: 'https://static.xx.fbcdn.net/rsrc.php/v4/yx/r/tBxa1IFcTQH.png',
-        deep: {
-          scheme: 'instagram://user?username=sperio.johoku.ladies'
-        },
-        web: 'https://www.instagram.com/sperio.johoku.ladies?igsh=YjI3YzNpazdqZDhu'
-      },
-      {
-        label: 'X / Twitter (スペリオ城北レディース)',
-        icon: 'https://cdn.cms-twdigitalassets.com/content/dam/about-twitter/x/brand-toolkit/logo-black.png.twimg.2560.png',
-        deep: {
-          scheme: 'twitter://user?screen_name=sperio_ladies'
-        },
-        web: 'https://x.com/sperio_ladies'
-      },
-
-      // --- フットボールアシスト ---
-      {
-        label: 'Instagram (フットボールアシスト)',
-        icon: 'https://static.xx.fbcdn.net/rsrc.php/v4/yx/r/tBxa1IFcTQH.png',
-        deep: {
-          scheme: 'instagram://user?username=f00tballassist'
-        },
-        web: 'https://www.instagram.com/f00tballassist?igsh=ZzZtYmxiNXJiNDNp'
-      },
-      {
-        label: 'X / Twitter (フットボールアシスト)',
-        icon: 'https://cdn.cms-twdigitalassets.com/content/dam/about-twitter/x/brand-toolkit/logo-black.png.twimg.2560.png',
-        deep: {
-          scheme: 'twitter://user?screen_name=footballassist1'
-        },
-        web: 'https://x.com/footballassist1'
-      },
-      // --- cielo8 ---
-      {
-        label: 'Instagram (nou)',
-        icon: 'https://static.xx.fbcdn.net/rsrc.php/v4/yx/r/tBxa1IFcTQH.png',
-        deep: {
-          scheme: 'instagram://user?username=nou_nakameguro'
-        },
-        web: 'https://www.instagram.com/nou_nakameguro?igsh=ZzZtYmxiNXJiNDNp'
-      },
-      {
-        label: 'Instagram (iro)',
-        icon: 'https://static.xx.fbcdn.net/rsrc.php/v4/yx/r/tBxa1IFcTQH.png',
-        deep: {
-          scheme: 'instagram://user?username=iro_nakameguro'
-        },
-        web: 'https://www.instagram.com/iro_nakameguro?igsh=ZzZtYmxiNXJiNDNp'
-      },
-      {
-        label: 'Instagram (kiso)',
-        icon: 'https://static.xx.fbcdn.net/rsrc.php/v4/yx/r/tBxa1IFcTQH.png',
-        deep: {
-          scheme: 'instagram://user?username=kiso_azabu'
-        },
-        web: 'https://www.instagram.com/kiso_azabu?igsh=ZzZtYmxiNXJiNDNp'
-      },
-      {
-        label: 'Instagram (ai.flower)',
-        icon: 'https://static.xx.fbcdn.net/rsrc.php/v4/yx/r/tBxa1IFcTQH.png',
-        deep: {
-          scheme: 'instagram://user?username=_ai.flower_'
-        },
-        web: 'https://www.instagram.com/_ai.flower_?igsh=ZzZtYmxiNXJiNDNp'
-      },
-      {
-        label: 'その他 (Note + Google)',
-        icon : 'https://images.icon-icons.com/2429/PNG/512/google_logo_icon_147282.png',
-        deep : null,
-        web  : null,
-        bulkUrls: [
-          'https://note.com/daytona/',
-          'https://watch-log.jp/photo-category/%e3%82%b3%e3%83%9f%e3%83%83%e3%83%88%e9%8a%80%e5%ba%a7/',
-          'https://www.google.com/search?q=%E6%99%82%E8%A8%88+%E8%B2%B7%E5%8F%96+%E3%82%B3%E3%83%9F%E3%83%83%E3%83%88%E9%8A%80%E5%BA%A7',
-          'https://www.google.com/search?q=%E3%83%87%E3%82%A4%E3%83%88%E3%83%8A+%E8%B2%B7%E5%8F%96+%E3%82%B3%E3%83%9F%E3%83%83%E3%83%88%E9%8A%80%E5%BA%A7',
-          'https://www.google.com/search?q=%E3%82%A8%E3%82%AF%E3%82%B9%E3%83%97%E3%83%AD%E3%83%BC%E3%83%A9%E3%83%BC+%E8%B2%B7%E5%8F%96+%E3%82%B3%E3%83%9F%E3%83%83%E3%83%88%E9%8A%80%E5%BA%A7',
-          'https://www.google.com/search?q=%E3%82%A8%E3%82%AF%E3%82%B9%E3%83%97%E3%83%AD%E3%83%BC%E3%83%A9%E3%83%BC2+%E8%B2%B7%E5%8F%96+%E3%82%B3%E3%83%9F%E3%83%83%E3%83%88%E9%8A%80%E5%BA%A7',
-          'https://www.google.com/search?q=%E3%82%B5%E3%83%96%E3%83%9E%E3%83%AA%E3%83%BC%E3%83%8A%E3%83%BC+%E8%B2%B7%E5%8F%96+%E3%82%B3%E3%83%9F%E3%83%83%E3%83%88%E9%8A%80%E5%BA%A7',
-          'https://www.google.com/search?q=GMT%E3%83%9E%E3%82%B9%E3%82%BF%E3%83%BC+%E8%B2%B7%E5%8F%96+%E3%82%B3%E3%83%9F%E3%83%83%E3%83%88%E9%8A%80%E5%BA%A7',
-          'https://www.google.com/search?q=%E3%82%B7%E3%83%BC%E3%83%89%E3%82%A5%E3%82%A8%E3%83%A9%E3%83%BC+%E8%B2%B7%E5%8F%96+%E3%82%B3%E3%83%9F%E3%83%83%E3%83%88%E9%8A%80%E5%BA%A7',
-          'https://www.google.com/search?q=GMT%E3%83%9E%E3%82%B9%E3%82%BF%E3%83%BC2+%E8%B2%B7%E5%8F%96+%E3%82%B3%E3%83%9F%E3%83%83%E3%83%88%E9%8A%80%E5%BA%A7',
-          'https://www.google.com/search?q=%E3%83%A8%E3%83%83%E3%83%88%E3%83%9E%E3%82%B9%E3%82%BF%E3%83%BC+%E8%B2%B7%E5%8F%96+%E3%82%B3%E3%83%9F%E3%83%83%E3%83%88%E9%8A%80%E5%BA%A7',
+        name: 'その他',
+        links: [
+          {label: 'note（金子）',icon: 'https://note.com/favicon.ico',deep: null,web: 'https://note.com/daytona/'},
+          {label: 'watch-log（コミット銀座投稿）',icon: 'https://watch-log.jp/favicon.ico',deep: null,web: 'https://watch-log.jp/photo-category/%e3%82%b3%e3%83%9f%e3%83%83%e3%83%88%e9%8a%80%e5%ba%a7/'},
+          {label: '時計 買取 コミット銀座',icon: 'https://images.icon-icons.com/2429/PNG/512/google_logo_icon_147282.png',deep: null,web: 'https://www.google.com/search?q=%E6%99%82%E8%A8%88+%E8%B2%B7%E5%8F%96+%E3%82%B3%E3%83%9F%E3%83%83%E3%83%88%E9%8A%80%E5%BA%A7'},
+          {label: 'デイトナ 買取 コミット銀座',icon: 'https://images.icon-icons.com/2429/PNG/512/google_logo_icon_147282.png',deep: null,web: 'https://www.google.com/search?q=%E3%83%87%E3%82%A4%E3%83%88%E3%83%8A+%E8%B2%B7%E5%8F%96+%E3%82%B3%E3%83%9F%E3%83%83%E3%83%88%E9%8A%80%E5%BA%A7'},
+          {label: 'エクスプローラー 買取 コミット銀座',icon: 'https://images.icon-icons.com/2429/PNG/512/google_logo_icon_147282.png',deep: null,web: 'https://www.google.com/search?q=%E3%82%A8%E3%82%AF%E3%82%B9%E3%83%97%E3%83%AD%E3%83%BC%E3%83%A9%E3%83%BC+%E8%B2%B7%E5%8F%96+%E3%82%B3%E3%83%9F%E3%83%83%E3%83%88%E9%8A%80%E5%BA%A7'},
+          {label: 'エクスプローラー2 買取 コミット銀座',icon: 'https://images.icon-icons.com/2429/PNG/512/google_logo_icon_147282.png',deep: null,web: 'https://www.google.com/search?q=%E3%82%A8%E3%82%AF%E3%82%B9%E3%83%97%E3%83%AD%E3%83%BC%E3%83%A9%E3%83%BC2+%E8%B2%B7%E5%8F%96+%E3%82%B3%E3%83%9F%E3%83%83%E3%83%88%E9%8A%80%E5%BA%A7'},
+          {label: 'サブマリーナー 買取 コミット銀座',icon: 'https://images.icon-icons.com/2429/PNG/512/google_logo_icon_147282.png',deep: null,web: 'https://www.google.com/search?q=%E3%82%B5%E3%83%96%E3%83%9E%E3%83%AA%E3%83%BC%E3%83%8A%E3%83%BC+%E8%B2%B7%E5%8F%96+%E3%82%B3%E3%83%9F%E3%83%83%E3%83%88%E9%8A%80%E5%BA%A7'},
+          {label: 'GMTマスター 買取 コミット銀座',icon: 'https://images.icon-icons.com/2429/PNG/512/google_logo_icon_147282.png',deep: null,web: 'https://www.google.com/search?q=GMT%E3%83%9E%E3%82%B9%E3%82%BF%E3%83%BC+%E8%B2%B7%E5%8F%96+%E3%82%B3%E3%83%9F%E3%83%83%E3%83%88%E9%8A%80%E5%BA%A7'},
+          {label: 'シードゥエラー 買取 コミット銀座',icon: 'https://images.icon-icons.com/2429/PNG/512/google_logo_icon_147282.png',deep: null,web: 'https://www.google.com/search?q=%E3%82%B7%E3%83%BC%E3%83%89%E3%82%A5%E3%82%A8%E3%83%A9%E3%83%BC+%E8%B2%B7%E5%8F%96+%E3%82%B3%E3%83%9F%E3%83%83%E3%83%88%E9%8A%80%E5%BA%A7'},
+          {label: 'GMTマスター2 買取 コミット銀座',icon: 'https://images.icon-icons.com/2429/PNG/512/google_logo_icon_147282.png',deep: null,web: 'https://www.google.com/search?q=GMT%E3%83%9E%E3%82%B9%E3%82%BF%E3%83%BC2+%E8%B2%B7%E5%8F%96+%E3%82%B3%E3%83%9F%E3%83%83%E3%83%88%E9%8A%80%E5%BA%A7'},
+          {label: 'ヨットマスター 買取 コミット銀座',icon: 'https://images.icon-icons.com/2429/PNG/512/google_logo_icon_147282.png',deep: null,web: 'https://www.google.com/search?q=%E3%83%A8%E3%83%83%E3%83%88%E3%83%9E%E3%82%B9%E3%82%BF%E3%83%BC+%E8%B2%B7%E5%8F%96+%E3%82%B3%E3%83%9F%E3%83%83%E3%83%88%E9%8A%80%E5%BA%A7'}
         ]
       }
-    ];
+    ]
+  },
+  {
+    company: '大津祐樹',
+    slug: 'yuki-otsu',
+    categories: [
+      {
+        name: '個人アカウント',
+        links: [
+          { label:'OFFICIAL', icon:'https://images.icon-icons.com/3041/PNG/512/tiktok_logo_icon_189233.png', deep:null, web:'https://www.tiktok.com/@o2yuki0324' },
+          { label:'OFFICIAL', icon:'https://static.xx.fbcdn.net/rsrc.php/v4/yx/r/tBxa1IFcTQH.png', deep:{scheme:'instagram://user?username=o2yuki'}, web:'https://www.instagram.com/o2yuki?igsh=MXM0eHBhdTZ4bm9kZg==' },
+          { label:'OFFICIAL', icon:'https://cdn.cms-twdigitalassets.com/content/dam/about-twitter/x/brand-toolkit/logo-black.png.twimg.2560.png', deep:{scheme:'twitter://user?screen_name=yukiotsu23'}, web:'https://x.com/yukiotsu23' },
+        ]
+      }
+    ]
+  },
+  {
+    company: 'スペリオ城北',
+    slug: 'sperio',
+    categories: [
+      {
+        name: '公式アカウント',
+        links: [
+          { label:'OFFICIAL', icon:'https://static.xx.fbcdn.net/rsrc.php/v4/yx/r/tBxa1IFcTQH.png', deep:{scheme:'instagram://user?username=sperio.johoku'}, web:'https://www.instagram.com/sperio.johoku?igsh=MWdzOWZsc3hpbHpqMg==' },
+          { label:'OFFICIAL', icon:'https://cdn.cms-twdigitalassets.com/content/dam/about-twitter/x/brand-toolkit/logo-black.png.twimg.2560.png', deep:{scheme:'twitter://user?screen_name=sperio_johoku'}, web:'https://x.com/sperio_johoku' },
+          { label:'OFFICIAL', icon:'https://images.icon-icons.com/2699/PNG/512/youtube_logo_icon_168737.png', deep:{scheme:'vnd.youtube://youtube.com/@footballassist3506'}, web:'https://youtube.com/@footballassist3506' },
+          { label:'OFFICIAL_LADYS', icon:'https://static.xx.fbcdn.net/rsrc.php/v4/yx/r/tBxa1IFcTQH.png', deep:{scheme:'instagram://user?username=sperio.johoku.ladies'}, web:'https://www.instagram.com/sperio.johoku.ladies?igsh=YjI3YzNpazdqZDhu' },
+          { label:'OFFICIAL_LADYS', icon:'https://cdn.cms-twdigitalassets.com/content/dam/about-twitter/x/brand-toolkit/logo-black.png.twimg.2560.png', deep:{scheme:'twitter://user?screen_name=sperio_ladies'}, web:'https://x.com/sperio_ladies' },
+        ]
+      }
+    ]
+  },
+  {
+    company: 'フットボールアシスト',
+    slug: 'football-assist',
+    categories: [
+      {
+        name: '公式アカウント',
+        links: [
+          { label:'OFFICIAL', icon:'https://static.xx.fbcdn.net/rsrc.php/v4/yx/r/tBxa1IFcTQH.png', deep:{scheme:'instagram://user?username=f00tballassist'}, web:'https://www.instagram.com/f00tballassist?igsh=ZzZtYmxiNXJiNDNp' },
+          { label:'OFFICIAL', icon:'https://cdn.cms-twdigitalassets.com/content/dam/about-twitter/x/brand-toolkit/logo-black.png.twimg.2560.png', deep:{scheme:'twitter://user?screen_name=footballassist1'}, web:'https://x.com/footballassist1' },
+        ]
+      }
+    ]
+  },
+  {
+    company: 'cielo8',
+    slug: 'cielo8',
+    categories: [
+      {
+        name: 'グループ',
+        links: [
+          { label:'nou', icon:'https://static.xx.fbcdn.net/rsrc.php/v4/yx/r/tBxa1IFcTQH.png', deep:{scheme:'instagram://user?username=nou_nakameguro'}, web:'https://www.instagram.com/nou_nakameguro?igsh=ZzZtYmxiNXJiNDNp' },
+          { label:'iro', icon:'https://static.xx.fbcdn.net/rsrc.php/v4/yx/r/tBxa1IFcTQH.png', deep:{scheme:'instagram://user?username=iro_nakameguro'}, web:'https://www.instagram.com/iro_nakameguro?igsh=ZzZtYmxiNXJiNDNp' },
+          { label:'kiso', icon:'https://static.xx.fbcdn.net/rsrc.php/v4/yx/r/tBxa1IFcTQH.png', deep:{scheme:'instagram://user?username=kiso_azabu'}, web:'https://www.instagram.com/kiso_azabu?igsh=ZzZtYmxiNXJiNDNp' },
+          { label:'ai.flower', icon:'https://static.xx.fbcdn.net/rsrc.php/v4/yx/r/tBxa1IFcTQH.png', deep:{scheme:'instagram://user?username=_ai.flower_'}, web:'https://www.instagram.com/_ai.flower_?igsh=ZzZtYmxiNXJiNDNp' },
+        ]
+      }
+    ]
+  }
+];
 
-    // --------------- DOM 生成 ----------------
-    const container = document.getElementById('buttons');
-    const tpl = document.getElementById('btn-template').content;
+/* 描画（detailsは初期クローズ） */
+const root = document.getElementById('root');
+const tplBtn = document.getElementById('btn-template').content;
 
-    links.forEach(item => {
-      const clone = tpl.cloneNode(true);
-      const btn = clone.querySelector('button');
-      clone.querySelector('img').src = item.icon;
-      clone.querySelector('img').alt = item.label;
-      clone.querySelector('span').textContent = item.label;
-      btn.addEventListener('click', () => handleClick(item, btn));
-      container.appendChild(clone);
+function render(){
+  root.innerHTML='';
+  DATA.forEach(({company, slug, categories})=>{
+    const section=document.createElement('section');
+    section.id = `company-${slug}`;
+    section.className='bg-white rounded-2xl shadow-sm border border-gray-200 overflow-hidden';
+    section.dataset.company = company;
+
+    const header=document.createElement('div');
+    header.className='px-4 py-3 bg-gray-50 border-b border-gray-200';
+    header.innerHTML=`<h2 class="text-lg font-semibold">${company}</h2>`;
+    section.appendChild(header);
+
+    const body=document.createElement('div');
+    body.className='divide-y';
+    categories.forEach(cat=>{
+      const details=document.createElement('details');
+      details.className='group';
+      details.open = false;
+
+      const summary=document.createElement('summary');
+      summary.className='flex items-center justify-between px-4 py-3 cursor-pointer select-none';
+      summary.innerHTML=`
+        <span class="font-medium">${cat.name}</span>
+        <svg xmlns="http://www.w3.org/2000/svg" class="w-5 h-5 transition-transform group-open:rotate-90" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 5l7 7-7 7" stroke-linecap="round" stroke-linejoin="round"/></svg>
+      `;
+      details.appendChild(summary);
+
+      const grid=document.createElement('div');
+      grid.className='px-4 pb-4 grid grid-cols-1 sm:grid-cols-2 gap-3';
+      cat.links.forEach(item=>{
+        const clone=tplBtn.cloneNode(true);
+        const btn=clone.querySelector('button');
+        const img=clone.querySelector('img');
+        const label=clone.querySelector('span');
+        img.src=item.icon; img.alt=item.label;
+        label.textContent=item.label;
+        btn.setAttribute('aria-label', item.label);
+        btn.addEventListener('click',()=>handleClick(item, btn));
+        grid.appendChild(clone);
+      });
+      details.appendChild(grid);
+      body.appendChild(details);
     });
-  </script>
+
+    section.appendChild(body);
+    root.appendChild(section);
+  });
+}
+
+/* 目次チップ */
+const chips = document.getElementById('companyChips');
+function renderChips(){
+  chips.innerHTML='';
+  DATA.forEach(({company, slug})=>{
+    const a=document.createElement('a');
+    a.href=`#company-${slug}`;
+    a.textContent=company;
+    a.className='shrink-0 px-3 py-1.5 rounded-full bg-white shadow border text-sm hover:bg-gray-50';
+    chips.appendChild(a);
+  });
+}
+
+/* 全展開/全折りたたみ */
+document.getElementById('expandAll').addEventListener('click', ()=>{
+  document.querySelectorAll('details').forEach(d=>d.open=true);
+});
+document.getElementById('collapseAll').addEventListener('click', ()=>{
+  document.querySelectorAll('details').forEach(d=>d.open=false);
+});
+
+/* 初期化 */
+render(); renderChips();
+</script>
 </body>
 </html>
